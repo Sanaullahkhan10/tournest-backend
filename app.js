@@ -18,49 +18,50 @@ const userRouter = require('./routes/userRoutes');
 const reviewRouter = require('./routes/reviewRoutes');
 const bookingRouter = require('./routes/bookingRoutes');
 const bookingController = require('./controllers/bookingController');
-const viewRouter = require('./routes/viewRoutes');
 
-// Start express app
 const app = express();
 
+// ✅ CORS — single, correct config for local + production
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://tournest-frontend.onrender.com'
 ];
 
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: function(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  })
+);
+
+// ✅ Handle preflight requests
+app.options(
+  '*',
+  cors({
+    origin: function(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  })
+);
 
 app.enable('trust proxy');
 
-app.set('view engine', 'pug');
-app.set('views', path.join(__dirname, 'views'));
-
-// 1) GLOBAL MIDDLEWARES
-// Implement CORS
-app.use(cors());
-// Access-Control-Allow-Origin *
-// api.natours.com, front-end natours.com
-// app.use(cors({
-//   origin: 'https://www.natours.com'
-// }))
-
-app.options('*', cors());
-// app.options('/api/v1/tours/:id', cors());
-
-// Serving static files
+// Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Set security HTTP headers
+// Security HTTP headers
 app.use(helmet());
 
 // Development logging
@@ -68,7 +69,7 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Limit requests from same API
+// Rate limiting
 const limiter = rateLimit({
   max: 100,
   windowMs: 60 * 60 * 1000,
@@ -76,25 +77,23 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Stripe webhook, BEFORE body-parser, because stripe needs the body as stream
+// Stripe webhook — BEFORE body parser
 app.post(
   '/webhook-checkout',
   bodyParser.raw({ type: 'application/json' }),
   bookingController.webhookCheckout
 );
 
-// Body parser, reading data from body into req.body
+// Body parser
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
-// Data sanitization against NoSQL query injection
+// Data sanitization
 app.use(mongoSanitize());
-
-// Data sanitization against XSS
 app.use(xss());
 
-// Prevent parameter pollution
+// Parameter pollution prevention
 app.use(
   hpp({
     whitelist: [
@@ -110,20 +109,19 @@ app.use(
 
 app.use(compression());
 
-// Test middleware
+// Request time middleware
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
-  // console.log(req.cookies);
   next();
 });
 
-// 3) ROUTES
-app.use('/', viewRouter);
+// Routes
 app.use('/api/v1/tours', tourRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/reviews', reviewRouter);
 app.use('/api/v1/bookings', bookingRouter);
 
+// 404 handler
 app.all('*', (req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
